@@ -1,22 +1,22 @@
-# Binding `jmalab.uk` to the App Service
+# Binding `jmalabuk.uk` to the App Service
 
-You said you already hold certs for `jmalab.uk`, so this assumes an existing `.pfx` rather than
+You said you already hold certs for `jmalabuk.uk`, so this assumes an existing `.pfx` rather than
 provisioning one from Let's Encrypt/App Service Managed Certificates (which also isn't available
 on the F1 Free tier — Managed Certificates need Basic or above).
 
 ## 1. DNS records
 
-At your DNS provider for `jmalab.uk`, add:
+At your DNS provider for `jmalabuk.uk`, add:
 
 | Type | Name | Value |
 |---|---|---|
-| CNAME | `app` (i.e. `app.jmalab.uk`) | `app-jmalab-simpleapp.azurewebsites.net` |
+| CNAME | `app` (i.e. `app.jmalabuk.uk`) | `app-jmalabuk-simpleapp.azurewebsites.net` |
 | TXT | `asuid.app` | `<domain verification ID from App Service → Custom domains>` |
 
 Get the verification ID with:
 
 ```bash
-az webapp show --resource-group rg-jmalab-dev --name app-jmalab-simpleapp \
+az webapp show --resource-group rg-jmalabuk-dev --name app-jmalabuk-simpleapp \
   --query customDomainVerificationId -o tsv
 ```
 
@@ -29,8 +29,8 @@ managed cert rotation.
 ```bash
 az keyvault certificate import \
   --vault-name <kv-name-from-deployment-output> \
-  --name jmalab-uk-cert \
-  --file /path/to/jmalab.uk.pfx \
+  --name jmalabuk-uk-cert \
+  --file /path/to/jmalabuk.uk.pfx \
   --password <pfx-password>
 ```
 
@@ -38,7 +38,7 @@ Grant the App Service's managed identity the `Key Vault Certificate User` role o
 addition to the `Key Vault Secrets User` role already assigned by `appservice.bicep`):
 
 ```bash
-principalId=$(az webapp show --resource-group rg-jmalab-dev --name app-jmalab-simpleapp \
+principalId=$(az webapp show --resource-group rg-jmalabuk-dev --name app-jmalabuk-simpleapp \
   --query identity.principalId -o tsv)
 
 az role assignment create \
@@ -52,19 +52,19 @@ az role assignment create \
 
 ```bash
 az webapp config hostname add \
-  --resource-group rg-jmalab-dev \
-  --webapp-name app-jmalab-simpleapp \
-  --hostname app.jmalab.uk
+  --resource-group rg-jmalabuk-dev \
+  --webapp-name app-jmalabuk-simpleapp \
+  --hostname app.jmalabuk.uk
 
 az webapp config ssl import \
-  --resource-group rg-jmalab-dev \
-  --name app-jmalab-simpleapp \
+  --resource-group rg-jmalabuk-dev \
+  --name app-jmalabuk-simpleapp \
   --key-vault <kv-name> \
-  --key-vault-certificate-name jmalab-uk-cert
+  --key-vault-certificate-name jmalabuk-uk-cert
 
 az webapp config ssl bind \
-  --resource-group rg-jmalab-dev \
-  --name app-jmalab-simpleapp \
+  --resource-group rg-jmalabuk-dev \
+  --name app-jmalabuk-simpleapp \
   --certificate-thumbprint <thumbprint-from-import-output> \
   --ssl-type SNI
 ```
@@ -73,7 +73,7 @@ az webapp config ssl bind \
 
 Custom domain **SSL binding on the Free (F1) App Service plan is not supported by Azure** —
 it requires at least the Shared or Basic tier. If you want the cert bound and serving HTTPS on
-`app.jmalab.uk` directly (rather than the `.azurewebsites.net` default), the plan SKU needs to
+`app.jmalabuk.uk` directly (rather than the `.azurewebsites.net` default), the plan SKU needs to
 move to `B1` (Basic), which has a small monthly cost. Two honest options for the lab:
 
 1. **Stay on F1** and demonstrate the pattern using the default `azurewebsites.net` hostname —

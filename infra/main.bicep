@@ -1,22 +1,25 @@
-// Subscription-scope orchestrator for the jmalab dev landing zone.
+// Subscription-scope orchestrator for the jmalabuk dev landing zone.
 // Deploy with:
-//   az deployment sub create --location uksouth --template-file main.bicep \
+//   az deployment sub create --name main-wcus --location westcentralus --template-file main.bicep \
 //     --parameters parameters/dev.bicepparam
 
 targetScope = 'subscription'
 
 @description('Environment name, used in resource naming and tagging')
-param environmentName string = 'dev'
+param environmentName string = 'dev-wcus'
 
 @description('Azure region for all resources')
-param location string = 'uksouth'
+param location string = 'westcentralus'
 
 @description('Custom domain to bind to the App Service')
-param customDomain string = 'jmalab.uk'
+param customDomain string = 'jmalabuk.uk'
 
-var rgName = 'rg-jmalab-${environmentName}'
+@description('Optional override for the Key Vault name, for when the default name is stuck soft-deleted from a previous deploy')
+param keyVaultNameOverride string = ''
+
+var rgName = 'rg-jmalabuk-${environmentName}'
 var tags = {
-  project: 'jmalab-security-platform-lab'
+  project: 'jmalabuk-security-platform-lab'
   environment: environmentName
   owner: 'platform-security'
   costCentre: 'free-tier-lab'
@@ -31,9 +34,6 @@ resource rg 'Microsoft.Resources/resourceGroups@2023-07-01' = {
 module policy 'modules/policy.bicep' = {
   name: 'policy-assignments'
   scope: rg
-  params: {
-    tags: tags
-  }
 }
 
 module network 'modules/network.bicep' = {
@@ -60,6 +60,7 @@ module keyVault 'modules/keyvault.bicep' = {
   params: {
     location: location
     tags: tags
+    vaultNameOverride: keyVaultNameOverride
   }
 }
 
@@ -69,7 +70,6 @@ module appService 'modules/appservice.bicep' = {
   params: {
     location: location
     tags: tags
-    subnetId: network.outputs.appSubnetId
     keyVaultName: keyVault.outputs.keyVaultName
     logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
     customDomain: customDomain

@@ -4,7 +4,7 @@ param location string
 @description('Tags to apply to all resources')
 param tags object
 
-var vnetName = 'vnet-jmalab'
+var vnetName = 'vnet-jmalabuk'
 var appSubnetName = 'snet-appservice'
 
 resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {

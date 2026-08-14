@@ -4,9 +4,6 @@ param location string
 @description('Tags to apply to all resources')
 param tags object
 
-@description('Subnet resource ID for VNet integration')
-param subnetId string
-
 @description('Key Vault name for RBAC role assignment')
 param keyVaultName string
 
@@ -16,16 +13,18 @@ param logAnalyticsWorkspaceId string
 @description('Custom domain to reference (actual binding is a post-deploy step — see docs/DOMAIN-SETUP.md)')
 param customDomain string
 
-var appName = 'app-jmalab-simpleapp'
-var planName = 'plan-jmalab-free'
+var appName = 'app-jmalabuk-simpleapp'
+var planName = 'plan-jmalabuk-free'
 
 resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: planName
   location: location
   tags: tags
   sku: {
-    name: 'F1' // Free tier — no VNet-integration for inbound private endpoints, but outbound
-                // VNet integration for reaching Key Vault privately IS available on F1.
+    name: 'F1' // Free tier. Was blocked by a 0-quota "Dedicated VMs" limit that Free Trial
+               // subscriptions can't self-serve a quota increase for; needs a Pay-As-You-Go
+               // upgrade to clear. Regional VNet integration and custom-domain SSL are not
+               // available on F1 — see docs/ROADMAP.md for the upgrade path.
     tier: 'Free'
   }
   properties: {
@@ -42,13 +41,18 @@ resource app 'Microsoft.Web/sites@2023-12-01' = {
   }
   properties: {
     serverFarmId: plan.id
-    virtualNetworkSubnetId: subnetId
     httpsOnly: true
     siteConfig: {
       linuxFxVersion: 'DOTNETCORE|8.0'
       minTlsVersion: '1.2'
       ftpsState: 'Disabled'
       http20Enabled: true
+      appSettings: [
+        {
+          name: 'KEY_VAULT_NAME'
+          value: keyVaultName
+        }
+      ]
     }
   }
 }

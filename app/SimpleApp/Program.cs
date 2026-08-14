@@ -51,7 +51,7 @@ app.MapGet("/config/status", (SecretClient? secretClient) =>
 
 app.MapGet("/", () => Results.Ok(new
 {
-    service = "jmalab-simpleapp",
+    service = "jmalabuk-simpleapp",
     message = "Golden-path sample workload — see /healthz and /config/status"
 }));
 

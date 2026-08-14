@@ -4,8 +4,8 @@
 
 ```mermaid
 flowchart TB
-    subgraph GH["GitHub — jmalab org"]
-        REPO["Repo: jmalab-simpleapp<br/>(created from golden-path template)"]
+    subgraph GH["GitHub — jmalabuk org"]
+        REPO["Repo: jmalabuk-simpleapp<br/>(created from golden-path template)"]
         WF["GitHub Actions<br/>ci-cd.yml"]
         CODEQL["CodeQL (SAST)"]
         DEP["Dependabot<br/>(dependency + secret scanning)"]
@@ -21,7 +21,7 @@ flowchart TB
     end
 
     subgraph AZ["Azure — Landing Zone (free tier)"]
-        RG["Resource Group: rg-jmalab-dev"]
+        RG["Resource Group: rg-jmalabuk-dev"]
         VNET["VNet + subnet<br/>(App Service integration)"]
         APP["App Service (F1)<br/>SimpleApp .NET 8"]
         KV["Key Vault<br/>(cert + secrets)"]
@@ -36,7 +36,7 @@ flowchart TB
     end
 
     subgraph DOMAIN["Custom domain"]
-        DNS["jmalab.uk (DNS)"]
+        DNS["jmalabuk.uk (DNS)"]
         CERT["TLS cert (existing, imported to Key Vault)"]
         DNS --> APP
         CERT --> KV --> APP
@@ -75,7 +75,7 @@ flowchart TB
   (`azure/login` with `client-id`/`tenant-id`, no stored client secret) — removes a long-lived
   secret from the biggest blast-radius location (CI/CD).
 - RBAC is scoped at the resource group: pipeline identity gets `Contributor` on
-  `rg-jmalab-dev` only, not subscription-wide.
+  `rg-jmalabuk-dev` only, not subscription-wide.
 
 ## Network
 

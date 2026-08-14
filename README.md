@@ -18,7 +18,7 @@ decision maps back to something you can talk about in an interview.
 | `.github/workflows` | CI/CD: build → SAST (CodeQL) → dependency/secret scanning → policy gate → deploy → DAST (OWASP ZAP) | "Embed SAST/DAST into CI/CD... enforce as policy gates" |
 | `policies/` | Azure Policy-as-code definitions (deny-by-default guardrails) | "Guardrails as code... compliant by construction" |
 | `docs/ARCHITECTURE.md` | System diagram + design rationale | "Represent posture to Security and audit" |
-| `docs/DOMAIN-SETUP.md` | Binding `jmalab.uk` + TLS cert to the App Service | Custom domain / cert handling |
+| `docs/DOMAIN-SETUP.md` | Binding `jmalabuk.uk` + TLS cert to the App Service | Custom domain / cert handling |
 | `docs/AGENTIC-AI.md` | Where and how agentic AI is used in the workflow, with guardrails | "Apply agentic AI to security engineering" |
 | `docs/ROADMAP.md` | How this scales from lab → real IDP | "Turn recurring needs into paved, supported capabilities" |
 
@@ -52,17 +52,45 @@ decision maps back to something you can talk about in an interview.
 
 ## Quick start
 
-```bash
+```pwsh
 # 1. Deploy the landing zone
 az deployment sub create `
-  --location uksouth `
+  --name main-wcus `
+  --location westcentralus `
   --template-file infra/main.bicep `
   --parameters infra/parameters/dev.bicepparam
 
 # 2. Push app/ and .github/ to a new GitHub repo — the workflow deploys on push to main
-git init && git remote add origin https://github.com/<you>/jmalab-simpleapp.git
+git init && git remote add origin https://github.com/<you>/jmalabuk-simpleapp.git
 
 # 3. Bind the custom domain — see docs/DOMAIN-SETUP.md
 ```
+
+## Deploying app code changes (without the GitHub pipeline)
+
+There are two *separate* deployments in this repo, and it's easy to mix them up:
+
+1. **Infrastructure** (`az deployment sub create`, above) — creates the empty App Service,
+   Key Vault, VNet, etc. It does **not** put your code on the App Service. Re-run it any time
+   `infra/` changes.
+2. **App code** — the actual `SimpleApp` C# code. Normally step 2 in Quick Start (push to
+   GitHub) handles this automatically via `.github/workflows`. Until that pipeline is wired up,
+   here's the manual equivalent, run from `app/SimpleApp`:
+
+   ```pwsh
+   # Build the app into a folder called publish/
+   dotnet publish -c Release -o ./publish
+
+   # Zip that folder up
+   Compress-Archive -Path .\publish\* -DestinationPath .\deploy.zip -Force
+
+   # Push the zip to the already-deployed App Service
+   az webapp deploy --resource-group rg-jmalabuk-dev-wcus --name app-jmalabuk-simpleapp --src-path .\deploy.zip --type zip
+   ```
+
+   `publish/`, `bin/`, `obj/`, and `*.zip` are build output, regenerated every time — they're
+   git-ignored on purpose and never need to be committed or manually cleaned up.
+
+3. **Verify**: `curl https://app-jmalabuk-simpleapp.azurewebsites.net/healthz`
 
 See `docs/ARCHITECTURE.md` for the full diagram and the reasoning behind each control.

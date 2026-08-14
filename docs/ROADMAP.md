@@ -7,7 +7,7 @@ and what the next increment would be if this became a real Internal Developer Pl
 
 | Area | Lab state | Real-world next step |
 |---|---|---|
-| App Service tier | F1 (Free) | Move to B1+/P-tier for custom-domain SSL binding and staging slots |
+| App Service tier | F1 (Free) — needs a Pay-As-You-Go upgrade on this subscription before the Dedicated VMs quota allows even F1 to deploy | Move to B1+/P-tier for regional VNet integration, custom-domain SSL, and staging slots |
 | Key Vault network | Public endpoint, `AzureServices` bypass | Private endpoint + `Deny` default network ACL once compute can reach it privately |
 | Multi-tenant isolation | Single resource group, single app | One resource group *per product team*, deployed from the same golden-path template — this repo becomes the template, not the tenant |
 | Policy scope | Assigned at resource-group scope for one RG | Assigned at management-group scope so every new landing zone inherits it automatically |
