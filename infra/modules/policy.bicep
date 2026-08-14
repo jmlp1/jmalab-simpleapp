@@ -3,10 +3,10 @@ param tags object
 
 // Built-in policy definition IDs (Azure Policy's public "Deny" set) — reused rather than
 // re-authored, per the "policy as code, not policy as wiki page" principle.
-var requireHttpsPolicyId = subscriptionResourceId('Microsoft.Authorization/policyDefinitions', 'a4af4a39-4135-47fb-b175-47fbdf85311d') // App Service should require HTTPS
-var minTlsPolicyId = subscriptionResourceId('Microsoft.Authorization/policyDefinitions', 'f0e6e85b-9b9f-4a4b-b67b-f730d42f1b0f') // App Service min TLS version
-var noPublicIpPolicyId = subscriptionResourceId('Microsoft.Authorization/policyDefinitions', '83a86a26-fd1f-447c-b59d-e51f44264114') // Storage/PaaS resources should restrict public network access
-var requireTagPolicyId = subscriptionResourceId('Microsoft.Authorization/policyDefinitions', '871b6d14-10aa-478d-b590-94f262ecfa99') // Require a tag on resource groups
+var requireHttpsPolicyId = tenantResourceId('Microsoft.Authorization/policyDefinitions', 'a4af4a39-4135-47fb-b175-47fbdf85311d') // App Service should require HTTPS
+var minTlsPolicyId = tenantResourceId('Microsoft.Authorization/policyDefinitions', 'f0e6e85b-9b9f-4a4b-b67b-f730d42f1b0f') // App Service min TLS version
+var noPublicIpPolicyId = tenantResourceId('Microsoft.Authorization/policyDefinitions', '83a86a26-fd1f-447c-b59d-e51f44264114') // Storage/PaaS resources should restrict public network access
+var requireTagPolicyId = tenantResourceId('Microsoft.Authorization/policyDefinitions', '871b6d14-10aa-478d-b590-94f262ecfa99') // Require a tag on resource groups
 
 resource requireHttps 'Microsoft.Authorization/policyAssignments@2022-06-01' = {
   name: 'deny-appservice-no-https'
