@@ -1,0 +1,35 @@
+{
+  "properties": {
+    "displayName": "Require 'owner' and 'dataClassification' tags on resources",
+    "description": "Denies creation of resources that are missing the tags Security and Audit need to identify ownership and data sensitivity without asking the team for a manual inventory.",
+    "policyType": "Custom",
+    "mode": "Indexed",
+    "parameters": {
+      "requiredTags": {
+        "type": "Array",
+        "metadata": {
+          "displayName": "Required tag names",
+          "description": "List of tag names that must be present on the resource"
+        },
+        "defaultValue": ["owner", "dataClassification"]
+      }
+    },
+    "policyRule": {
+      "if": {
+        "anyOf": [
+          {
+            "field": "tags['owner']",
+            "exists": "false"
+          },
+          {
+            "field": "tags['dataClassification']",
+            "exists": "false"
+          }
+        ]
+      },
+      "then": {
+        "effect": "deny"
+      }
+    }
+  }
+}

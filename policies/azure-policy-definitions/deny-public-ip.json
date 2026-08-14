@@ -1,0 +1,41 @@
+{
+  "properties": {
+    "displayName": "Deny public network access on Key Vault and Storage",
+    "description": "Forces publicNetworkAccess to Disabled on Key Vault and Storage accounts so data services are reachable only via private endpoint/VNet integration. Documented in this lab as a target-state policy — not assigned at F1 tier because the App Service Free plan cannot reach a fully private Key Vault (see docs/ROADMAP.md).",
+    "policyType": "Custom",
+    "mode": "Indexed",
+    "policyRule": {
+      "if": {
+        "anyOf": [
+          {
+            "allOf": [
+              {
+                "field": "type",
+                "equals": "Microsoft.KeyVault/vaults"
+              },
+              {
+                "field": "Microsoft.KeyVault/vaults/publicNetworkAccess",
+                "notEquals": "Disabled"
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "field": "type",
+                "equals": "Microsoft.Storage/storageAccounts"
+              },
+              {
+                "field": "Microsoft.Storage/storageAccounts/publicNetworkAccess",
+                "notEquals": "Disabled"
+              }
+            ]
+          }
+        ]
+      },
+      "then": {
+        "effect": "deny"
+      }
+    }
+  }
+}
