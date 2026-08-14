@@ -54,9 +54,9 @@ decision maps back to something you can talk about in an interview.
 
 ```bash
 # 1. Deploy the landing zone
-az deployment sub create \
-  --location uksouth \
-  --template-file infra/main.bicep \
+az deployment sub create `
+  --location uksouth `
+  --template-file infra/main.bicep `
   --parameters infra/parameters/dev.bicepparam
 
 # 2. Push app/ and .github/ to a new GitHub repo — the workflow deploys on push to main
