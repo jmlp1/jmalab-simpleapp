@@ -208,6 +208,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      issues: write # lets the action file/update a tracking issue with each scan's findings
     steps:
       - name: ZAP baseline scan
         uses: zaproxy/action-baseline@v0.12.0
