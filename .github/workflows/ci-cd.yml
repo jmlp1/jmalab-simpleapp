@@ -61,6 +61,7 @@ jobs:
     # findings (upload: never skips GitHub's own severity check along with the upload).
     permissions:
       contents: read
+      actions: read # codeql-action needs this to read its own workflow run, even without upload
     steps:
       - uses: actions/checkout@v4
 
