@@ -91,7 +91,10 @@ There are two *separate* deployments in this repo, and it's easy to mix them up:
    `publish/`, `bin/`, `obj/`, and `*.zip` are build output, regenerated every time — they're
    git-ignored on purpose and never need to be committed or manually cleaned up.
 
-3. **Verify**: `curl https://app-jmalabuk-simpleapp.azurewebsites.net/healthz`
-               `curl https://app-jmalabuk-simpleapp.azurewebsites.net/config/status`
-
+3. **Verify**:
+   ```
+       curl https://app-jmalabuk-simpleapp.azurewebsites.net/healthz
+       curl https://app-jmalabuk-simpleapp.azurewebsites.net/config/status
+   ```
+   
 See `docs/ARCHITECTURE.md` for the full diagram and the reasoning behind each control.
