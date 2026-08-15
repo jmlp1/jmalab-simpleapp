@@ -54,10 +54,13 @@ jobs:
   codeql:
     name: SAST (CodeQL)
     runs-on: ubuntu-latest
+    # This repo is a personal private repo, and GitHub Advanced Security (which the Security
+    # tab / code scanning alerts require) is org-only — see docs/ROADMAP.md. CodeQL still runs;
+    # results are published as a downloadable SARIF artifact instead of a Security-tab alert,
+    # and the explicit grep step below is what actually gates the pipeline on error-level
+    # findings (upload: never skips GitHub's own severity check along with the upload).
     permissions:
       contents: read
-      security-events: write
-      actions: read
     steps:
       - uses: actions/checkout@v4
 
@@ -75,13 +78,32 @@ jobs:
       - uses: github/codeql-action/analyze@v3
         with:
           category: "/language:csharp"
+          upload: never
+          output: sarif-results
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codeql-sarif
+          path: sarif-results
+
+      - name: Fail on error-severity CodeQL findings
+        run: |
+          count=$(jq '[.runs[].results[]? | select(.level=="error")] | length' sarif-results/*.sarif | awk '{s+=$1} END {print s+0}')
+          echo "Error-level findings: $count"
+          if [ "$count" -gt 0 ]; then
+            echo "::error::CodeQL found $count error-severity issue(s) — see the codeql-sarif artifact."
+            exit 1
+          fi
 
   dependency-secret-scan:
     name: Dependency & secret scan
     runs-on: ubuntu-latest
+    # actions/dependency-review-action is deliberately not used here: it requires the
+    # Dependency graph / GitHub Advanced Security, which — like CodeQL's Security tab —
+    # isn't available on a personal private repo. `dotnet list package --vulnerable` below
+    # is the free-tier equivalent and runs on every push and PR.
     permissions:
       contents: read
-      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -92,18 +114,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Dependency review (pull requests only)
-        if: github.event_name == 'pull_request'
-        uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: high
-
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Known-vulnerable NuGet packages (push/main baseline)
-        if: github.event_name != 'pull_request'
+      - name: Known-vulnerable NuGet packages
         working-directory: ${{ env.APP_DIR }}
         run: |
           dotnet restore
