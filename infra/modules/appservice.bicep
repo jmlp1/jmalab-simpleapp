@@ -28,7 +28,7 @@ resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
     tier: 'Free'
   }
   properties: {
-    reserved: true // Linux plan, hosts the .NET 8 app
+    reserved: true // Linux plan, hosts the .NET 10 app
   }
 }
 
@@ -43,7 +43,7 @@ resource app 'Microsoft.Web/sites@2023-12-01' = {
     serverFarmId: plan.id
     httpsOnly: true
     siteConfig: {
-      linuxFxVersion: 'DOTNETCORE|8.0'
+      linuxFxVersion: 'DOTNETCORE|10.0'
       minTlsVersion: '1.2'
       ftpsState: 'Disabled'
       http20Enabled: true

@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 env:
-  DOTNET_VERSION: "8.0.x"
+  DOTNET_VERSION: "10.0.x"
   APP_DIR: app/SimpleApp
   RESOURCE_GROUP: rg-jmalabuk-dev-wcus
   APP_SERVICE_NAME: app-jmalabuk-simpleapp
@@ -156,9 +156,40 @@ jobs:
             --template-file infra/main.bicep \
             --parameters infra/parameters/dev.bicepparam
 
+  infra-deploy:
+    name: Apply infrastructure changes
+    needs: policy-gate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Same environment as the app deploy job below: this is the step that actually applies
+    # infra/ changes to the live subscription, so it deserves the same "production" gate.
+    # GitHub Environment required-reviewer approval isn't set up yet (that's a Settings toggle,
+    # not something expressible here) — worth adding given this now runs on every push to main.
+    environment:
+      name: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Apply infra/ via Bicep
+        run: |
+          az deployment sub create \
+            --name main-wcus \
+            --location westcentralus \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/dev.bicepparam
+
   deploy:
     name: Deploy to App Service
-    needs: [build, codeql, dependency-secret-scan, policy-gate]
+    needs: [build, codeql, dependency-secret-scan, policy-gate, infra-deploy]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
