@@ -254,3 +254,5 @@ jobs:
           target: ${{ env.APP_URL }}
           cmd_options: "-a"
           fail_action: false
+          artifact_name: zapscanreport # testing whether the default 'zap_scan' name was the
+          # cause of the repeated "Create Artifact Container failed" error — see git history

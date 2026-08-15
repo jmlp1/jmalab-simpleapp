@@ -14,8 +14,9 @@ decision maps back to something you can talk about in an interview.
 | Folder | Purpose | Maps to JD theme |
 |---|---|---|
 | `infra/` | Bicep modules for the landing zone (network, App Service, Key Vault, Log Analytics, Policy) | "Build and run the platform on Azure" |
-| `app/SimpleApp` | Minimal .NET 8 API — the "product team" workload the platform hosts | Proof the golden path actually runs a real app |
-| `.github/workflows` | CI/CD: build → SAST (CodeQL) → dependency/secret scanning → policy gate → deploy → DAST (OWASP ZAP) | "Embed SAST/DAST into CI/CD... enforce as policy gates" |
+| `app/SimpleApp` | Minimal .NET 10 API — the "product team" workload the platform hosts | Proof the golden path actually runs a real app |
+| `.github/workflows` | CI/CD: build → SAST (CodeQL) → dependency/secret scanning → policy gate → apply infra → deploy → DAST (OWASP ZAP) | "Embed SAST/DAST into CI/CD... enforce as policy gates" |
+| `.github/dependabot.yml` | Weekly dependency updates (NuGet + GitHub Actions versions) | Keeps the pipeline itself and app dependencies patched |
 | `policies/` | Azure Policy-as-code definitions (deny-by-default guardrails) | "Guardrails as code... compliant by construction" |
 | `docs/ARCHITECTURE.md` | System diagram + design rationale | "Represent posture to Security and audit" |
 | `docs/DOMAIN-SETUP.md` | Binding `jmalabuk.uk` + TLS cert to the App Service | Custom domain / cert handling |
@@ -45,7 +46,7 @@ decision maps back to something you can talk about in an interview.
 | Azure Policy | Included, no cost | Guardrails-as-code |
 | Microsoft Entra ID | Free tier | App registration, managed identity, RBAC |
 | Virtual Network | No cost for the VNet itself | Segregates the App Service via VNet integration (data-out charges are the only cost, and stay ~£0 at lab scale) |
-| GitHub | Free plan (public repo) or free private-repo Actions minutes | CodeQL is free on public repos; free minutes cover this on private too |
+| GitHub | Free plan, private repo | Free Actions minutes cover this pipeline. **Note:** GitHub Advanced Security (CodeQL Security-tab alerts, `dependency-review-action`) is org-only — it does not work on a personal private repo at all, at any price. The pipeline works around this: CodeQL still runs and gates the build, results just publish as a downloadable SARIF artifact instead of a Security-tab alert (see `.github/workflows/ci-cd.yml`). |
 
 > ⚠️ Nothing here needs a paid Azure tier. If you later add Azure Front Door, WAF, or a paid App
 > Service plan for staging slots, flag it — those are the first things that would burn credits.
@@ -53,7 +54,8 @@ decision maps back to something you can talk about in an interview.
 ## Quick start
 
 ```pwsh
-# 1. Deploy the landing zone
+# 1. Deploy the landing zone (first time only — see below for why this can't be
+#    bootstrapped by the pipeline itself)
 az deployment sub create `
   --name main-wcus `
   --location westcentralus `
@@ -66,17 +68,24 @@ git init && git remote add origin https://github.com/<you>/jmalabuk-simpleapp.gi
 # 3. Bind the custom domain — see docs/DOMAIN-SETUP.md
 ```
 
+Step 1 is a **first-time-only bootstrap**. After that, `infra/` changes (App Service SKU, runtime
+stack, Key Vault, policy assignments, etc.) are applied automatically by the pipeline's
+`infra-deploy` job on every push to `main` — see "CI/CD pipeline setup" below. It can't bootstrap
+itself because the Azure identity the pipeline uses to deploy has to be granted access *scoped to
+a resource group that already exists*, which means the very first deployment has to happen by hand,
+under your own login.
+
 ## CI/CD pipeline setup (one-time)
 
 `.github/workflows/ci-cd.yml` runs on every push/PR to `main`: build → CodeQL (SAST) →
 dependency/secret scan → policy gate (`az deployment sub what-if` against the Azure Policy
-guardrails in `infra/`) → deploy → OWASP ZAP baseline scan (DAST). Deploy and DAST only run on
-push to `main`, not on pull requests.
+guardrails in `infra/`) → apply infra (`az deployment sub create`) → deploy app code → OWASP ZAP
+baseline scan (DAST). Only `infra-deploy`, `deploy`, and `dast` are restricted to push on `main`
+— the four checks before them also run on pull requests.
 
 It authenticates to Azure via **OIDC federated credentials** — no client secret stored in
-GitHub. Before the pipeline can deploy, add these repo secrets (Settings → Secrets and
-variables → Actions), from a one-time Azure App Registration + federated credential set up for
-this repo:
+GitHub. Before the pipeline can do anything against Azure, add these repo secrets (Settings →
+Secrets and variables → Actions):
 
 | Secret | Value |
 |---|---|
@@ -84,17 +93,53 @@ this repo:
 | `AZURE_TENANT_ID` | `kadiz1divisionhotmail.onmicrosoft.com` tenant ID |
 | `AZURE_SUBSCRIPTION_ID` | The `Udemy_Demo` subscription ID |
 
-The App Registration's service principal needs `Contributor` on `rg-jmalabuk-dev-wcus`, and a
-federated credential scoped to this repo (subject `repo:<owner>/<repo>:ref:refs/heads/main`, plus
-`pull_request` if you want the policy-gate what-if to run on PRs too).
+**The permission/trust setup is more involved than it looks**, and cost real debugging time to
+get right — worth documenting precisely rather than the simplified version this section used to
+have:
+
+*Federated credentials* (Azure trusts a GitHub OIDC token as this identity, no password) — GitHub
+includes immutable numeric IDs in the token's subject claim, and the subject shape also differs
+for jobs tagged with a GitHub Environment, so **two** are needed on the App Registration for this
+repo to fully work: one for a plain push to `main`
+(`repo:<owner>@<owner-id>/<repo>@<repo-id>:ref:refs/heads/main`), and one for jobs tagged
+`environment: production` (`repo:<owner>@<owner-id>/<repo>@<repo-id>:environment:production` —
+both `infra-deploy` and `deploy` use that environment). Get the exact numeric IDs from a failed
+run's error message (`AADSTS700213: No matching federated identity record...` includes the exact
+subject GitHub actually sent) rather than guessing them — don't use the plain `repo:<owner>/<repo>`
+form some older docs/examples show, it won't match.
+
+*Azure role assignments* — `Contributor` scoped to `rg-jmalabuk-dev-wcus` covers most resource
+management, but **is not enough** for the `policy-gate`/`infra-deploy` jobs, because Azure
+deliberately excludes `Microsoft.Authorization/*` actions (policy assignments, role assignments)
+from `Contributor` — even a dry-run `what-if` needs the real write permission to simulate those.
+The identity ends up needing four grants total:
+- `Contributor` on `rg-jmalabuk-dev-wcus`
+- A custom role (`Microsoft.Resources/deployments/*` only) on the **subscription**, since
+  `main.bicep`'s `targetScope` is `subscription` (it creates the resource group itself)
+- `Resource Policy Contributor` on `rg-jmalabuk-dev-wcus` (for the Azure Policy assignments in
+  `infra/modules/policy.bicep`)
+- `User Access Administrator` on `rg-jmalabuk-dev-wcus` (for the Key Vault RBAC role assignment
+  in `infra/modules/appservice.bicep`) — this one is categorically different from the others,
+  it's IAM-granting power, not resource management, even though it's scoped to one small RG.
+  Worth knowing before granting it.
+
+None of this is set up automatically, and it's easy to under-grant on a first attempt — if
+rebuilding this from scratch, expect to re-derive some of it from a failed run's error text; the
+errors are specific enough to point at the exact missing grant each time.
+
+**Not yet configured**: GitHub Environment required-reviewer approval on `production` — right now
+`infra-deploy` and `deploy` run fully unattended on every push to `main`, no human clicks approve
+first. Would be the natural next step before this pattern is "production-real" rather than
+lab-real.
 
 ## Deploying app code changes manually (bypassing the pipeline)
 
 There are two *separate* deployments in this repo, and it's easy to mix them up:
 
 1. **Infrastructure** (`az deployment sub create`, above) — creates the empty App Service,
-   Key Vault, VNet, etc. It does **not** put your code on the App Service. Re-run it any time
-   `infra/` changes.
+   Key Vault, VNet, etc. It does **not** put your code on the App Service. Normally the
+   pipeline's `infra-deploy` job re-runs this automatically on every push to `main`; the manual
+   command is only needed for the first-ever bootstrap or if the pipeline itself is broken.
 2. **App code** — the actual `SimpleApp` C# code. Normally this happens automatically via
    `.github/workflows/ci-cd.yml` on push to `main`. If you need to push a change without
    waiting on the pipeline (e.g. the pipeline itself is broken), here's the manual equivalent,
