@@ -1,0 +1,201 @@
+name: ci-cd
+
+# Golden-path pipeline: build -> SAST (CodeQL) -> dependency/secret scan -> policy gate
+# (Bicep what-if against the assigned Azure Policies) -> deploy -> DAST (OWASP ZAP).
+# See docs/ARCHITECTURE.md for the diagram this file implements.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: "8.0.x"
+  APP_DIR: app/SimpleApp
+  RESOURCE_GROUP: rg-jmalabuk-dev-wcus
+  APP_SERVICE_NAME: app-jmalabuk-simpleapp
+  APP_URL: https://app-jmalabuk-simpleapp.azurewebsites.net
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        working-directory: ${{ env.APP_DIR }}
+        run: dotnet restore
+
+      - name: Build
+        working-directory: ${{ env.APP_DIR }}
+        run: dotnet build -c Release --no-restore
+
+      - name: Publish
+        working-directory: ${{ env.APP_DIR }}
+        run: dotnet publish -c Release --no-build -o ./publish
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-publish
+          path: ${{ env.APP_DIR }}/publish
+
+  codeql:
+    name: SAST (CodeQL)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: csharp
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:csharp"
+
+  dependency-secret-scan:
+    name: Dependency & secret scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Dependency review (pull requests only)
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Known-vulnerable NuGet packages (push/main baseline)
+        if: github.event_name != 'pull_request'
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          dotnet restore
+          vulnerable=$(dotnet list package --vulnerable --include-transitive 2>&1)
+          echo "$vulnerable"
+          if echo "$vulnerable" | grep -qi "has the following vulnerable packages"; then
+            echo "::error::Vulnerable NuGet package(s) detected — see log above."
+            exit 1
+          fi
+
+  policy-gate:
+    name: Policy gate (Bicep what-if)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Bicep lint
+        run: az bicep build --file infra/main.bicep
+
+      - name: What-if against Azure Policy guardrails
+        run: |
+          az deployment sub what-if \
+            --name main-wcus \
+            --location westcentralus \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/dev.bicepparam
+
+  deploy:
+    name: Deploy to App Service
+    needs: [build, codeql, dependency-secret-scan, policy-gate]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ env.APP_URL }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-publish
+          path: publish
+
+      - name: Zip publish output
+        run: (cd publish && zip -r ../deploy.zip .)
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy zip to App Service
+        run: |
+          az webapp deploy \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.APP_SERVICE_NAME }} \
+            --src-path deploy.zip \
+            --type zip
+
+      - name: Smoke test /healthz
+        run: |
+          for i in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "${{ env.APP_URL }}/healthz")
+            if [ "$code" = "200" ]; then echo "healthy"; exit 0; fi
+            echo "attempt $i: got $code, retrying..."
+            sleep 10
+          done
+          echo "::error::App did not report healthy after deploy."
+          exit 1
+
+  dast:
+    name: DAST (OWASP ZAP baseline)
+    needs: deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: ZAP baseline scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: ${{ env.APP_URL }}
+          cmd_options: "-a"
+          fail_action: false

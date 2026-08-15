@@ -66,16 +66,39 @@ git init && git remote add origin https://github.com/<you>/jmalabuk-simpleapp.gi
 # 3. Bind the custom domain — see docs/DOMAIN-SETUP.md
 ```
 
-## Deploying app code changes (without the GitHub pipeline)
+## CI/CD pipeline setup (one-time)
+
+`.github/workflows/ci-cd.yml` runs on every push/PR to `main`: build → CodeQL (SAST) →
+dependency/secret scan → policy gate (`az deployment sub what-if` against the Azure Policy
+guardrails in `infra/`) → deploy → OWASP ZAP baseline scan (DAST). Deploy and DAST only run on
+push to `main`, not on pull requests.
+
+It authenticates to Azure via **OIDC federated credentials** — no client secret stored in
+GitHub. Before the pipeline can deploy, add these repo secrets (Settings → Secrets and
+variables → Actions), from a one-time Azure App Registration + federated credential set up for
+this repo:
+
+| Secret | Value |
+|---|---|
+| `AZURE_CLIENT_ID` | Application (client) ID of the App Registration used by the pipeline |
+| `AZURE_TENANT_ID` | `kadiz1divisionhotmail.onmicrosoft.com` tenant ID |
+| `AZURE_SUBSCRIPTION_ID` | The `Udemy_Demo` subscription ID |
+
+The App Registration's service principal needs `Contributor` on `rg-jmalabuk-dev-wcus`, and a
+federated credential scoped to this repo (subject `repo:<owner>/<repo>:ref:refs/heads/main`, plus
+`pull_request` if you want the policy-gate what-if to run on PRs too).
+
+## Deploying app code changes manually (bypassing the pipeline)
 
 There are two *separate* deployments in this repo, and it's easy to mix them up:
 
 1. **Infrastructure** (`az deployment sub create`, above) — creates the empty App Service,
    Key Vault, VNet, etc. It does **not** put your code on the App Service. Re-run it any time
    `infra/` changes.
-2. **App code** — the actual `SimpleApp` C# code. Normally step 2 in Quick Start (push to
-   GitHub) handles this automatically via `.github/workflows`. Until that pipeline is wired up,
-   here's the manual equivalent, run from `app/SimpleApp`:
+2. **App code** — the actual `SimpleApp` C# code. Normally this happens automatically via
+   `.github/workflows/ci-cd.yml` on push to `main`. If you need to push a change without
+   waiting on the pipeline (e.g. the pipeline itself is broken), here's the manual equivalent,
+   run from `app/SimpleApp`:
 
    ```pwsh
    # Build the app into a folder called publish/
