@@ -92,5 +92,6 @@ There are two *separate* deployments in this repo, and it's easy to mix them up:
    git-ignored on purpose and never need to be committed or manually cleaned up.
 
 3. **Verify**: `curl https://app-jmalabuk-simpleapp.azurewebsites.net/healthz`
+               `curl https://app-jmalabuk-simpleapp.azurewebsites.net/config/status`
 
 See `docs/ARCHITECTURE.md` for the full diagram and the reasoning behind each control.
