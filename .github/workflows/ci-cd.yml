@@ -239,14 +239,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      issues: write # lets the action file/update a tracking issue with each scan's findings
     steps:
       # continue-on-error because the report-artifact upload inside this action has hit a
       # known intermittent GitHub backend issue ("Create Artifact Container failed") that
       # isn't retryable and isn't about our config. The scan's actual findings are already
-      # captured either way via the GitHub Issue this action files (allow_issue_writing above),
-      # so a red job here would only ever be about that redundant zip, not the real result —
-      # check the job summary/linked issue for the real outcome, not just pass/fail colour.
+      # captured in the job summary either way, so a red job here would only ever be about
+      # that redundant zip, not the real result — check the job summary for the real outcome,
+      # not just pass/fail colour.
       - name: ZAP baseline scan
         uses: zaproxy/action-baseline@v0.12.0
         continue-on-error: true
@@ -254,5 +253,8 @@ jobs:
           target: ${{ env.APP_URL }}
           cmd_options: "-a"
           fail_action: false
+          allow_issue_writing: false # this action files a brand-new issue on every run instead
+          # of updating a prior one (no dedup despite what the docs imply) — disabled to stop
+          # unbounded issue creation; findings still live in the job summary above.
           artifact_name: zapscanreport # testing whether the default 'zap_scan' name was the
           # cause of the repeated "Create Artifact Container failed" error — see git history

@@ -7,11 +7,14 @@ var builder = WebApplication.CreateBuilder(args);
 // not as a secret — the vault name itself isn't sensitive.
 var keyVaultName = builder.Configuration["KEY_VAULT_NAME"];
 
-builder.Services.AddSingleton(sp =>
+// Registered as SecretClient (not SecretClient?) so the generic `class` constraint on
+// AddSingleton<TService> is satisfied; the null-forgiving return below is intentional —
+// /config/status (further down) is the code that actually handles the null case.
+builder.Services.AddSingleton<SecretClient>(sp =>
 {
     if (string.IsNullOrWhiteSpace(keyVaultName))
     {
-        return null;
+        return null!;
     }
 
     // DefaultAzureCredential picks up the App Service system-assigned managed identity in Azure,
