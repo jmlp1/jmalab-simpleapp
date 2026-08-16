@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 env:
-  DOTNET_VERSION: "8.0.x"
+  DOTNET_VERSION: "10.0.x"
   APP_DIR: app/SimpleApp
   RESOURCE_GROUP: rg-jmalabuk-dev-wcus
   APP_SERVICE_NAME: app-jmalabuk-simpleapp
@@ -28,9 +28,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -54,14 +54,18 @@ jobs:
   codeql:
     name: SAST (CodeQL)
     runs-on: ubuntu-latest
+    # This repo is a personal private repo, and GitHub Advanced Security (which the Security
+    # tab / code scanning alerts require) is org-only — see docs/ROADMAP.md. CodeQL still runs;
+    # results are published as a downloadable SARIF artifact instead of a Security-tab alert,
+    # and the explicit grep step below is what actually gates the pipeline on error-level
+    # findings (upload: never skips GitHub's own severity check along with the upload).
     permissions:
       contents: read
-      security-events: write
-      actions: read
+      actions: read # codeql-action needs this to read its own workflow run, even without upload
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -75,35 +79,47 @@ jobs:
       - uses: github/codeql-action/analyze@v3
         with:
           category: "/language:csharp"
+          upload: never
+          output: sarif-results
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codeql-sarif
+          path: sarif-results
+
+      - name: Fail on error-severity CodeQL findings
+        run: |
+          count=$(jq '[.runs[].results[]? | select(.level=="error")] | length' sarif-results/*.sarif | awk '{s+=$1} END {print s+0}')
+          echo "Error-level findings: $count"
+          if [ "$count" -gt 0 ]; then
+            echo "::error::CodeQL found $count error-severity issue(s) — see the codeql-sarif artifact."
+            exit 1
+          fi
 
   dependency-secret-scan:
     name: Dependency & secret scan
     runs-on: ubuntu-latest
+    # actions/dependency-review-action is deliberately not used here: it requires the
+    # Dependency graph / GitHub Advanced Security, which — like CodeQL's Security tab —
+    # isn't available on a personal private repo. `dotnet list package --vulnerable` below
+    # is the free-tier equivalent and runs on every push and PR.
     permissions:
       contents: read
-      pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Secret scan (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Dependency review (pull requests only)
-        if: github.event_name == 'pull_request'
-        uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: high
-
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Known-vulnerable NuGet packages (push/main baseline)
-        if: github.event_name != 'pull_request'
+      - name: Known-vulnerable NuGet packages
         working-directory: ${{ env.APP_DIR }}
         run: |
           dotnet restore
@@ -121,9 +137,9 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: azure/login@v2
+      - uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -140,9 +156,40 @@ jobs:
             --template-file infra/main.bicep \
             --parameters infra/parameters/dev.bicepparam
 
+  infra-deploy:
+    name: Apply infrastructure changes
+    needs: policy-gate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Same environment as the app deploy job below: this is the step that actually applies
+    # infra/ changes to the live subscription, so it deserves the same "production" gate.
+    # GitHub Environment required-reviewer approval isn't set up yet (that's a Settings toggle,
+    # not something expressible here) — worth adding given this now runs on every push to main.
+    environment:
+      name: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Apply infra/ via Bicep
+        run: |
+          az deployment sub create \
+            --name main-wcus \
+            --location westcentralus \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/dev.bicepparam
+
   deploy:
     name: Deploy to App Service
-    needs: [build, codeql, dependency-secret-scan, policy-gate]
+    needs: [build, codeql, dependency-secret-scan, policy-gate, infra-deploy]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
@@ -152,7 +199,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: app-publish
           path: publish
@@ -160,7 +207,7 @@ jobs:
       - name: Zip publish output
         run: (cd publish && zip -r ../deploy.zip .)
 
-      - uses: azure/login@v2
+      - uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -192,10 +239,20 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      issues: write # lets the action file/update a tracking issue with each scan's findings
     steps:
+      # continue-on-error because the report-artifact upload inside this action has hit a
+      # known intermittent GitHub backend issue ("Create Artifact Container failed") that
+      # isn't retryable and isn't about our config. The scan's actual findings are already
+      # captured either way via the GitHub Issue this action files (allow_issue_writing above),
+      # so a red job here would only ever be about that redundant zip, not the real result —
+      # check the job summary/linked issue for the real outcome, not just pass/fail colour.
       - name: ZAP baseline scan
         uses: zaproxy/action-baseline@v0.12.0
+        continue-on-error: true
         with:
           target: ${{ env.APP_URL }}
           cmd_options: "-a"
           fail_action: false
+          artifact_name: zapscanreport # testing whether the default 'zap_scan' name was the
+          # cause of the repeated "Create Artifact Container failed" error — see git history
