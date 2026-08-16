@@ -54,14 +54,13 @@ jobs:
   codeql:
     name: SAST (CodeQL)
     runs-on: ubuntu-latest
-    # This repo is a personal private repo, and GitHub Advanced Security (which the Security
-    # tab / code scanning alerts require) is org-only — see docs/ROADMAP.md. CodeQL still runs;
-    # results are published as a downloadable SARIF artifact instead of a Security-tab alert,
-    # and the explicit grep step below is what actually gates the pipeline on error-level
-    # findings (upload: never skips GitHub's own severity check along with the upload).
+    # Repo is public, so native GitHub code scanning (Security tab) is available for free.
+    # The explicit grep step below still gates the pipeline on error-level findings directly,
+    # independent of the Security tab.
     permissions:
       contents: read
-      actions: read # codeql-action needs this to read its own workflow run, even without upload
+      actions: read # codeql-action needs this to read its own workflow run
+      security-events: write # required for CodeQL to upload SARIF/database results
     steps:
       - uses: actions/checkout@v7
 
@@ -79,10 +78,6 @@ jobs:
       - uses: github/codeql-action/analyze@v3
         with:
           category: "/language:csharp"
-          upload: never
-          upload-database: false # separate from `upload` above — this is what was actually
-          # producing "Code scanning is not enabled for this repository", since Advanced
-          # Security is required for the database upload too, not just the SARIF upload.
           output: sarif-results
 
       - uses: actions/upload-artifact@v4
