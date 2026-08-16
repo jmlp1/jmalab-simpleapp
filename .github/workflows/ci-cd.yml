@@ -80,6 +80,9 @@ jobs:
         with:
           category: "/language:csharp"
           upload: never
+          upload-database: false # separate from `upload` above — this is what was actually
+          # producing "Code scanning is not enabled for this repository", since Advanced
+          # Security is required for the database upload too, not just the SARIF upload.
           output: sarif-results
 
       - uses: actions/upload-artifact@v4
